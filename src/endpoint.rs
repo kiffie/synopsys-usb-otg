@@ -1,4 +1,4 @@
-use usb_device::{Result, UsbError, UsbDirection, endpoint::EndpointType};
+use usb_device::{Result, UsbError, UsbDirection};
 use usb_device::endpoint::EndpointAddress;
 use crate::endpoint_memory::{EndpointBuffer, EndpointBufferState};
 use crate::ral::{read_reg, write_reg, modify_reg, endpoint_in, endpoint_out, endpoint0_out};
@@ -61,8 +61,8 @@ impl Endpoint {
         self.descriptor.address.index() as u8
     }
 
-    pub fn ep_type(&self) -> EndpointType {
-        self.descriptor.ep_type
+    pub fn descriptor(&self) -> &EndpointDescriptor {
+        &self.descriptor
     }
 }
 
@@ -182,29 +182,14 @@ impl EndpointOut {
             modify_reg!(endpoint0_out, regs, DOEPCTL0, MPSIZ: mpsiz as u32, EPENA: 1, CNAK: 1);
         } else {
             let regs = self.usb.endpoint_out(self.index() as usize);
-            if self.descriptor.ep_type == EndpointType::Isochronous {
-                write_reg!(endpoint_out, regs, DOEPTSIZ, PKTCNT: 1, XFRSIZ: 0);
-                // let odd = read_reg!(otg_device, self.usb.device(), DSTS, FNSOF) & 0x01 == 1;
-                write_reg!(endpoint_out, regs, DOEPCTL,
-                    //SODDFRM: 1,
-                    SD0PID_SEVNFRM: 1,
-                    CNAK: 1,
-                    EPENA: 1,
-                    USBAEP: 1,
-                    EPTYP: self.descriptor.ep_type as u32,
-                    MPSIZ: self.descriptor.max_packet_size as u32,
-                    EONUM_DPID: 0
-                );
-            } else {
-                write_reg!(endpoint_out, regs, DOEPCTL,
-                    SD0PID_SEVNFRM: 1,
-                    CNAK: 1,
-                    EPENA: 1,
-                    USBAEP: 1,
-                    EPTYP: self.descriptor.ep_type as u32,
-                    MPSIZ: self.descriptor.max_packet_size as u32
-                );
-            }
+            write_reg!(endpoint_out, regs, DOEPCTL,
+                SD0PID_SEVNFRM: 1,
+                CNAK: 1,
+                EPENA: 1,
+                USBAEP: 1,
+                EPTYP: self.descriptor.ep_type as u32,
+                MPSIZ: self.descriptor.max_packet_size as u32
+            );
         }
     }
 
@@ -224,24 +209,9 @@ impl EndpointOut {
     }
 
     pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        //if self.descriptor.ep_type == EndpointType::Isochronous {
-//             let regs = self.usb.endpoint_out(self.index() as usize);
-//             let odd = read_reg!(otg_device, self.usb.device(), DSTS, FNSOF) & 0x01 == 1;
-//             write_reg!(endpoint_out, regs, DOEPCTL,
-//                 SODDFRM: 1,
-//                 SD0PID_SEVNFRM: 1,
-//                 CNAK: 1,
-//                 EPENA: 1,
-//                 USBAEP: 1,
-//                 EPTYP: self.descriptor.ep_type as u32,
-//                 MPSIZ: self.descriptor.max_packet_size as u32,
-//                 EONUM_DPID: odd as u32
-//             );
-        //}
         interrupt::free(|cs| {
             self.buffer.borrow(cs).borrow_mut().read_packet(buf)
         })
-
     }
 
     pub fn buffer_state(&self) -> EndpointBufferState {
